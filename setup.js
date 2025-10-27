@@ -8,7 +8,7 @@ JWT_SECRET=your-super-secret-jwt-key-change-this-in-production-${Date.now()}
 JWT_EXPIRES_IN=7d
 
 # Database
-DATABASE_URL=postgresql://postgres:GSyOaZVrftyrsQvWvDCnqmIrHgRatGFP@metro.proxy.rlwy.net:47685/railway
+DATABASE_URL=postgresql://postgres:XXXXXX@metro.proxy.rlwy.net:47685/railway
 `;
 
 const envPath = path.join(__dirname, '.env');

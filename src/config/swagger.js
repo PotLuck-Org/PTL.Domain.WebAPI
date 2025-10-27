@@ -1,5 +1,17 @@
 const swaggerJsdoc = require('swagger-jsdoc');
 
+// Determine server URL based on environment
+const getServerUrl = () => {
+  // Use relative URL for Railway deployment to avoid CORS issues
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production') {
+    return '/api';
+  }
+  
+  // For local development
+  const port = process.env.PORT || 3000;
+  return `http://localhost:${port}/api`;
+};
+
 const options = {
   definition: {
     openapi: '3.0.0',
@@ -18,12 +30,8 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:3000/api',
-        description: 'Development server'
-      },
-      {
-        url: 'https://api.potluck.com/api',
-        description: 'Production server'
+        url: getServerUrl(),
+        description: process.env.RAILWAY_ENVIRONMENT ? 'Production server' : 'Development server'
       }
     ],
     components: {

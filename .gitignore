@@ -6,3 +6,6 @@ node_modules/
 *.json.backup
 dist/
 
+# Development files (optional to commit, but containing credentials)
+# Uncomment the line below to exclude setup.js from git:
+# setup.js
