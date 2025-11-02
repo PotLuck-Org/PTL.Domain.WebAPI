@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const UserProfile = require('../models/UserProfile');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -228,6 +229,127 @@ router.get('/me', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Get me error:', error);
     res.status(500).json({ error: 'Failed to get user info' });
+  }
+});
+
+/**
+ * @swagger
+ * /quick-signup:
+ *   post:
+ *     summary: Quick signup with user and profile creation
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - username
+ *               - firstname
+ *               - lastname
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *               username:
+ *                 type: string
+ *                 minLength: 3
+ *               firstname:
+ *                 type: string
+ *               lastname:
+ *                 type: string
+ *               middlename:
+ *                 type: string
+ *               date_of_birth:
+ *                 type: string
+ *                 format: date
+ *               gender:
+ *                 type: string
+ *                 enum: [Male, Female, Other]
+ *     responses:
+ *       201:
+ *         description: User and profile created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 user:
+ *                   type: object
+ *                 profile:
+ *                   type: object
+ */
+// POST /api/quick-signup - Quick signup with user and profile
+router.post('/quick-signup', [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('username').isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
+  body('firstname').notEmpty().withMessage('First name is required'),
+  body('lastname').notEmpty().withMessage('Last name is required'),
+  body('middlename').optional(),
+  body('date_of_birth').optional().isISO8601().toDate(),
+  body('gender').optional().isIn(['Male', 'Female', 'Other']),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, password, username, firstname, lastname, middlename, date_of_birth, gender } = req.body;
+
+    // Check if user already exists
+    if (await User.emailExists(email)) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+
+    if (await User.usernameExists(username)) {
+      return res.status(400).json({ error: 'Username already taken' });
+    }
+
+    // Create user
+    const user = await User.create({ email, password, username });
+
+    // Create profile for the user
+    const profile = await UserProfile.create({
+      userId: user.id,
+      firstname,
+      lastname,
+      middlename,
+      date_of_birth,
+      gender
+    });
+
+    res.status(201).json({
+      message: 'User created',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role
+      },
+      profile: {
+        firstname: profile.firstname,
+        lastname: profile.lastname,
+        middlename: profile.middlename,
+        date_of_birth: profile.date_of_birth,
+        gender: profile.gender
+      }
+    });
+  } catch (error) {
+    console.error('Quick signup error:', error);
+    res.status(500).json({ 
+      error: 'Registration failed',
+      message: error.message
+    });
   }
 });
 
