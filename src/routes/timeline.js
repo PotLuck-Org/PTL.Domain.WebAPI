@@ -106,6 +106,8 @@ router.get('/timeline', authenticateToken, async (req, res) => {
  *             required:
  *               - content
  *             properties:
+ *               title:
+ *                 type: string
  *               content:
  *                 type: string
  *               image_url:
@@ -124,6 +126,7 @@ router.get('/timeline', authenticateToken, async (req, res) => {
  */
 // POST /api/timeline - Create timeline post (Admin & President only)
 router.post('/timeline', authenticateToken, checkRoleAccess(['Admin', 'President']), [
+  body('title').optional(),
   body('content').notEmpty().withMessage('Content is required'),
   body('image_url').optional().isURL().withMessage('Invalid image URL'),
   body('attachment_url').optional().isURL().withMessage('Invalid attachment URL'),
@@ -135,10 +138,10 @@ router.post('/timeline', authenticateToken, checkRoleAccess(['Admin', 'President
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { content, image_url, attachment_url, attachment_name } = req.body;
+    const { title, content, image_url, attachment_url, attachment_name } = req.body;
     const author_id = req.user.id;
 
-    const post = await Timeline.create({ content, image_url, attachment_url, attachment_name, author_id });
+    const post = await Timeline.create({ title, content, image_url, attachment_url, attachment_name, author_id });
 
     res.status(201).json({ 
       message: 'Timeline post created successfully',
@@ -170,6 +173,8 @@ router.post('/timeline', authenticateToken, checkRoleAccess(['Admin', 'President
  *           schema:
  *             type: object
  *             properties:
+ *               title:
+ *                 type: string
  *               content:
  *                 type: string
  *               image_url:
@@ -184,6 +189,7 @@ router.post('/timeline', authenticateToken, checkRoleAccess(['Admin', 'President
  */
 // PUT /api/timeline/:id - Update timeline post (Admin & President only)
 router.put('/timeline/:id', authenticateToken, checkRoleAccess(['Admin', 'President']), [
+  body('title').optional(),
   body('content').optional().notEmpty(),
   body('image_url').optional().isURL(),
   body('attachment_url').optional().isURL()
@@ -195,7 +201,7 @@ router.put('/timeline/:id', authenticateToken, checkRoleAccess(['Admin', 'Presid
     }
 
     const { id } = req.params;
-    const { content, image_url, attachment_url, attachment_name } = req.body;
+    const { title, content, image_url, attachment_url, attachment_name } = req.body;
 
     // Check if post exists
     if (!(await Timeline.exists(id))) {
@@ -203,7 +209,7 @@ router.put('/timeline/:id', authenticateToken, checkRoleAccess(['Admin', 'Presid
     }
 
     // Update post
-    const post = await Timeline.update(id, { content, image_url, attachment_url, attachment_name });
+    const post = await Timeline.update(id, { title, content, image_url, attachment_url, attachment_name });
 
     res.json({ 
       message: 'Timeline post updated successfully',

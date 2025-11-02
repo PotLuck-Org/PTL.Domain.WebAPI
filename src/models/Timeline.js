@@ -90,12 +90,12 @@ class Timeline {
   }
 
   // Create timeline post
-  static async create({ content, image_url, attachment_url, attachment_name, author_id }) {
+  static async create({ title, content, image_url, attachment_url, attachment_name, author_id }) {
     const result = await pool.query(
-      `INSERT INTO timeline_posts (content, image_url, attachment_url, attachment_name, author_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO timeline_posts (title, content, image_url, attachment_url, attachment_name, author_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [content, image_url, attachment_url, attachment_name, author_id]
+      [title, content, image_url, attachment_url, attachment_name, author_id]
     );
     return result.rows[0];
   }
