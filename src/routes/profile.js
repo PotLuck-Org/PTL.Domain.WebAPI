@@ -88,7 +88,8 @@ router.get('/profile/:username', async (req, res) => {
         lastname: profileData.lastname,
         middlename: profileData.middlename,
         about: profileData.about,
-        occupation: profileData.occupation
+        occupation: profileData.occupation,
+        date_of_birth: profileData.date_of_birth,
         // phone_number excluded for non-authorities
       },
       socials: socialsData,
@@ -129,6 +130,9 @@ router.get('/profile/:username', async (req, res) => {
  *                 type: string
  *               phone_number:
  *                 type: string
+ *               date_of_birth:
+ *                 type: string
+ *                 format: date
  *               facebook_url:
  *                 type: string
  *               github_url:
@@ -160,6 +164,7 @@ router.post('/profile', authenticateToken, [
   body('about').optional(),
   body('occupation').optional(),
   body('phone_number').optional(),
+  body('date_of_birth').optional().isISO8601().toDate(),
   body('facebook_url').optional().isURL(),
   body('github_url').optional().isURL(),
   body('linkedin_url').optional().isURL(),
@@ -177,7 +182,7 @@ router.post('/profile', authenticateToken, [
 
     const userId = req.user.id;
     const { 
-      firstname, lastname, middlename, about, occupation, phone_number,
+      firstname, lastname, middlename, about, occupation, phone_number, date_of_birth,
       facebook_url, github_url, linkedin_url, twitter_url,
       street_number, street_address, post_code, county
     } = req.body;
@@ -189,7 +194,7 @@ router.post('/profile', authenticateToken, [
 
     // Create profile, socials, and address using models
     await Promise.all([
-      UserProfile.create({ userId, firstname, lastname, middlename, about, occupation, phone_number }),
+      UserProfile.create({ userId, firstname, lastname, middlename, about, occupation, phone_number, date_of_birth }),
       UserSocials.create({ userId, facebook_url, github_url, linkedin_url, twitter_url }),
       UserAddress.create({ userId, street_number, street_address, post_code, county })
     ]);
@@ -226,10 +231,17 @@ router.post('/profile', authenticateToken, [
  *                 type: string
  *               lastname:
  *                 type: string
+ *               middlename:
+ *                 type: string
  *               about:
  *                 type: string
  *               occupation:
  *                 type: string
+ *               phone_number:
+ *                 type: string
+ *               date_of_birth:
+ *                 type: string
+ *                 format: date
  *     responses:
  *       200:
  *         description: Profile updated successfully
@@ -245,6 +257,7 @@ router.put('/profile/:username', authenticateToken, [
   body('about').optional(),
   body('occupation').optional(),
   body('phone_number').optional(),
+  body('date_of_birth').optional().isISO8601().toDate(),
   body('facebook_url').optional().isURL(),
   body('github_url').optional().isURL(),
   body('linkedin_url').optional().isURL(),
@@ -281,14 +294,14 @@ router.put('/profile/:username', authenticateToken, [
     }
 
     const { 
-      firstname, lastname, middlename, about, occupation, phone_number,
+      firstname, lastname, middlename, about, occupation, phone_number, date_of_birth,
       facebook_url, github_url, linkedin_url, twitter_url,
       street_number, street_address, post_code, county
     } = req.body;
 
     // Update profile, socials, and address using models
     const updateProfile = UserProfile.update(targetUserId, {
-      firstname, lastname, middlename, about, occupation, phone_number
+      firstname, lastname, middlename, about, occupation, phone_number, date_of_birth
     });
 
     const updateSocials = UserSocials.update(targetUserId, {

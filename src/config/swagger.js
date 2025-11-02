@@ -64,7 +64,8 @@ const options = {
             middlename: { type: 'string' },
             about: { type: 'string' },
             occupation: { type: 'string' },
-            phone_number: { type: 'string' }
+            phone_number: { type: 'string' },
+            date_of_birth: { type: 'string', format: 'date' }
           }
         },
         UserSocials: {

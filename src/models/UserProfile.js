@@ -11,13 +11,13 @@ class UserProfile {
   }
 
   // Create profile
-  static async create({ userId, firstname, lastname, middlename, about, occupation, phone_number }) {
+  static async create({ userId, firstname, lastname, middlename, about, occupation, phone_number, date_of_birth }) {
     const result = await pool.query(
       `INSERT INTO user_profiles 
-       (user_id, firstname, lastname, middlename, about, occupation, phone_number) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (user_id, firstname, lastname, middlename, about, occupation, phone_number, date_of_birth) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [userId, firstname, lastname, middlename, about, occupation, phone_number]
+      [userId, firstname, lastname, middlename, about, occupation, phone_number, date_of_birth]
     );
     return result.rows[0];
   }
