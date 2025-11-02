@@ -108,14 +108,18 @@ router.get('/timeline', authenticateToken, async (req, res) => {
  *             properties:
  *               title:
  *                 type: string
+ *                 description: Optional title for the post
  *               content:
  *                 type: string
  *               image_url:
  *                 type: string
+ *                 description: Optional image URL (must be valid URL if provided)
  *               attachment_url:
  *                 type: string
+ *                 description: Optional attachment URL (must be valid URL if provided)
  *               attachment_name:
  *                 type: string
+ *                 description: Optional name for the attachment
  *     responses:
  *       201:
  *         description: Timeline post created successfully
@@ -128,8 +132,30 @@ router.get('/timeline', authenticateToken, async (req, res) => {
 router.post('/timeline', authenticateToken, checkRoleAccess(['Admin', 'President']), [
   body('title').optional(),
   body('content').notEmpty().withMessage('Content is required'),
-  body('image_url').optional().isURL().withMessage('Invalid image URL'),
-  body('attachment_url').optional().isURL().withMessage('Invalid attachment URL'),
+  body('image_url')
+    .optional()
+    .custom((value) => {
+      if (!value || (typeof value === 'string' && value.trim() === '')) return true;
+      try {
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .withMessage('Invalid image URL'),
+  body('attachment_url')
+    .optional()
+    .custom((value) => {
+      if (!value || (typeof value === 'string' && value.trim() === '')) return true;
+      try {
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .withMessage('Invalid attachment URL'),
   body('attachment_name').optional()
 ], async (req, res) => {
   try {
@@ -141,7 +167,15 @@ router.post('/timeline', authenticateToken, checkRoleAccess(['Admin', 'President
     const { title, content, image_url, attachment_url, attachment_name } = req.body;
     const author_id = req.user.id;
 
-    const post = await Timeline.create({ title, content, image_url, attachment_url, attachment_name, author_id });
+    // Convert empty strings to null for optional fields
+    const post = await Timeline.create({ 
+      title: title || null, 
+      content, 
+      image_url: image_url || null, 
+      attachment_url: attachment_url || null, 
+      attachment_name: attachment_name || null, 
+      author_id 
+    });
 
     res.status(201).json({ 
       message: 'Timeline post created successfully',
@@ -191,8 +225,31 @@ router.post('/timeline', authenticateToken, checkRoleAccess(['Admin', 'President
 router.put('/timeline/:id', authenticateToken, checkRoleAccess(['Admin', 'President']), [
   body('title').optional(),
   body('content').optional().notEmpty(),
-  body('image_url').optional().isURL(),
-  body('attachment_url').optional().isURL()
+  body('image_url')
+    .optional()
+    .custom((value) => {
+      if (!value || (typeof value === 'string' && value.trim() === '')) return true;
+      try {
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .withMessage('Invalid image URL'),
+  body('attachment_url')
+    .optional()
+    .custom((value) => {
+      if (!value || (typeof value === 'string' && value.trim() === '')) return true;
+      try {
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .withMessage('Invalid attachment URL'),
+  body('attachment_name').optional()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -208,8 +265,16 @@ router.put('/timeline/:id', authenticateToken, checkRoleAccess(['Admin', 'Presid
       return res.status(404).json({ error: 'Timeline post not found' });
     }
 
+    // Build update object, converting empty strings to null and only including defined fields
+    const updateFields = {};
+    if (title !== undefined) updateFields.title = title || null;
+    if (content !== undefined) updateFields.content = content;
+    if (image_url !== undefined) updateFields.image_url = image_url || null;
+    if (attachment_url !== undefined) updateFields.attachment_url = attachment_url || null;
+    if (attachment_name !== undefined) updateFields.attachment_name = attachment_name || null;
+
     // Update post
-    const post = await Timeline.update(id, { title, content, image_url, attachment_url, attachment_name });
+    const post = await Timeline.update(id, updateFields);
 
     res.json({ 
       message: 'Timeline post updated successfully',
