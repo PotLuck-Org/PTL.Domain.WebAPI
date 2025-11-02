@@ -65,7 +65,8 @@ const options = {
             about: { type: 'string' },
             occupation: { type: 'string' },
             phone_number: { type: 'string' },
-            date_of_birth: { type: 'string', format: 'date' }
+            date_of_birth: { type: 'string', format: 'date' },
+            gender: { type: 'string', enum: ['Male', 'Female', 'Other'] }
           }
         },
         UserSocials: {

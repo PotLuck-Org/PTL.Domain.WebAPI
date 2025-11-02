@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     occupation VARCHAR(200),
     phone_number VARCHAR(20),
     date_of_birth DATE,
+    gender VARCHAR(20),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id)
