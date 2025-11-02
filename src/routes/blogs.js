@@ -11,11 +11,24 @@ const router = express.Router();
  * @swagger
  * /blogs:
  *   get:
- *     summary: List all blog posts
+ *     summary: List all blog posts with pagination
  *     tags: [Blogs]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number (starts from 1)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of blog posts per page
  *     responses:
  *       200:
- *         description: List of all blog posts
+ *         description: Paginated list of blog posts
  *         content:
  *           application/json:
  *             schema:
@@ -25,8 +38,23 @@ const router = express.Router();
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Blog'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     currentPage:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     totalBlogs:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     hasNextPage:
+ *                       type: boolean
+ *                     hasPreviousPage:
+ *                       type: boolean
  */
-// GET /api/blogs - List all blog posts (accessible by everyone)
+// GET /api/blogs - List all blog posts with pagination (accessible by everyone)
 router.get('/blogs', async (req, res) => {
   try {
     const authHeader = req.headers['authorization'];
@@ -49,9 +77,29 @@ router.get('/blogs', async (req, res) => {
       }
     }
 
-    const blogs = await Blog.findAll(isAdmin);
+    // Parse pagination parameters
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10)); // Max 100 per page
+    
+    // Get paginated blogs and total count
+    const [blogs, totalBlogs] = await Promise.all([
+      Blog.findAllPaginated(page, limit, isAdmin),
+      Blog.count(isAdmin)
+    ]);
+    
+    const totalPages = Math.ceil(totalBlogs / limit);
 
-    res.json({ blogs });
+    res.json({
+      blogs,
+      pagination: {
+        currentPage: page,
+        limit,
+        totalBlogs,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
   } catch (error) {
     console.error('Get blogs error:', error);
     res.status(500).json({ error: 'Failed to get blogs' });

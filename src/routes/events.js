@@ -10,11 +10,24 @@ const router = express.Router();
  * @swagger
  * /events:
  *   get:
- *     summary: List all events
+ *     summary: List all events with pagination
  *     tags: [Events]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number (starts from 1)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of events per page
  *     responses:
  *       200:
- *         description: List of all events
+ *         description: Paginated list of events
  *         content:
  *           application/json:
  *             schema:
@@ -24,12 +37,48 @@ const router = express.Router();
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Event'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     currentPage:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     totalEvents:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     hasNextPage:
+ *                       type: boolean
+ *                     hasPreviousPage:
+ *                       type: boolean
  */
-// GET /api/events - List all events (accessible by everyone)
+// GET /api/events - List all events with pagination (accessible by everyone)
 router.get('/events', async (req, res) => {
   try {
-    const events = await Event.findAll();
-    res.json({ events });
+    // Parse pagination parameters
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10)); // Max 100 per page
+    
+    // Get paginated events and total count
+    const [events, totalEvents] = await Promise.all([
+      Event.findAllPaginated(page, limit),
+      Event.count()
+    ]);
+    
+    const totalPages = Math.ceil(totalEvents / limit);
+    
+    res.json({
+      events,
+      pagination: {
+        currentPage: page,
+        limit,
+        totalEvents,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
   } catch (error) {
     console.error('Get events error:', error);
     res.status(500).json({ error: 'Failed to get events' });

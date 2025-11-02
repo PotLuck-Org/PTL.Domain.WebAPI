@@ -10,13 +10,26 @@ const router = express.Router();
  * @swagger
  * /timeline:
  *   get:
- *     summary: List all timeline posts (authenticated users only)
+ *     summary: List all timeline posts with pagination (authenticated users only)
  *     tags: [Timeline]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number (starts from 1)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of posts per page
  *     responses:
  *       200:
- *         description: List of all timeline posts
+ *         description: Paginated list of timeline posts
  *         content:
  *           application/json:
  *             schema:
@@ -26,14 +39,50 @@ const router = express.Router();
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Timeline'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     currentPage:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     totalPosts:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     hasNextPage:
+ *                       type: boolean
+ *                     hasPreviousPage:
+ *                       type: boolean
  *       401:
  *         description: Unauthorized
  */
-// GET /api/timeline - List all timeline posts (authenticated users only)
+// GET /api/timeline - List all timeline posts with pagination (authenticated users only)
 router.get('/timeline', authenticateToken, async (req, res) => {
   try {
-    const posts = await Timeline.findAll();
-    res.json({ posts });
+    // Parse pagination parameters
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10)); // Max 100 per page
+    
+    // Get paginated posts and total count
+    const [posts, totalPosts] = await Promise.all([
+      Timeline.findAllPaginated(page, limit),
+      Timeline.count()
+    ]);
+    
+    const totalPages = Math.ceil(totalPosts / limit);
+    
+    res.json({
+      posts,
+      pagination: {
+        currentPage: page,
+        limit,
+        totalPosts,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
   } catch (error) {
     console.error('Get timeline error:', error);
     res.status(500).json({ error: 'Failed to get timeline posts' });

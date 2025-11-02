@@ -54,6 +54,41 @@ class Timeline {
     return posts;
   }
 
+  // Find all timeline posts with pagination
+  static async findAllPaginated(page = 1, limit = 10) {
+    const offset = (page - 1) * limit;
+    
+    const result = await pool.query(
+      `SELECT * FROM timeline_posts 
+       ORDER BY created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    
+    // Get author info for each post
+    const posts = await Promise.all(result.rows.map(async (post) => {
+      if (post.author_id) {
+        const authorResult = await pool.query(
+          'SELECT username, email FROM users WHERE id = $1',
+          [post.author_id]
+        );
+        if (authorResult.rows.length > 0) {
+          post.author_username = authorResult.rows[0].username;
+          post.author_email = authorResult.rows[0].email;
+        }
+      }
+      return post;
+    }));
+    
+    return posts;
+  }
+
+  // Count total timeline posts
+  static async count() {
+    const result = await pool.query('SELECT COUNT(*) FROM timeline_posts');
+    return parseInt(result.rows[0].count, 10);
+  }
+
   // Create timeline post
   static async create({ content, image_url, attachment_url, attachment_name, author_id }) {
     const result = await pool.query(

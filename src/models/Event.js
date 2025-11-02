@@ -54,6 +54,41 @@ class Event {
     return events;
   }
 
+  // Find all events with pagination
+  static async findAllPaginated(page = 1, limit = 10) {
+    const offset = (page - 1) * limit;
+    
+    const result = await pool.query(
+      `SELECT * FROM community_events 
+       ORDER BY event_date DESC, event_time DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    
+    // Get host info for each event
+    const events = await Promise.all(result.rows.map(async (event) => {
+      if (event.event_host) {
+        const hostResult = await pool.query(
+          'SELECT username, email FROM users WHERE id = $1',
+          [event.event_host]
+        );
+        if (hostResult.rows.length > 0) {
+          event.host_username = hostResult.rows[0].username;
+          event.host_email = hostResult.rows[0].email;
+        }
+      }
+      return event;
+    }));
+    
+    return events;
+  }
+
+  // Count total events
+  static async count() {
+    const result = await pool.query('SELECT COUNT(*) FROM community_events');
+    return parseInt(result.rows[0].count, 10);
+  }
+
   // Create event
   static async create({ event_name, event_address, event_time, event_date, event_description, event_host }) {
     const result = await pool.query(

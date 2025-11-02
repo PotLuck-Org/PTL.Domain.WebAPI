@@ -38,6 +38,48 @@ class Blog {
     return blogsWithAuthors;
   }
 
+  // Find all blogs with pagination
+  static async findAllPaginated(page = 1, limit = 10, showUnapproved = false) {
+    const offset = (page - 1) * limit;
+    
+    const query = showUnapproved
+      ? `SELECT * FROM blog_posts 
+         ORDER BY created_at DESC
+         LIMIT $1 OFFSET $2`
+      : `SELECT * FROM blog_posts 
+         WHERE is_available = true 
+         ORDER BY created_at DESC
+         LIMIT $1 OFFSET $2`;
+    
+    const result = await pool.query(query, [limit, offset]);
+    
+    // Get author info for each blog
+    const blogsWithAuthors = await Promise.all(result.rows.map(async (blog) => {
+      if (blog.author_id) {
+        const authorResult = await pool.query(
+          'SELECT username FROM users WHERE id = $1',
+          [blog.author_id]
+        );
+        if (authorResult.rows.length > 0) {
+          blog.author = authorResult.rows[0].username;
+        }
+      }
+      return blog;
+    }));
+
+    return blogsWithAuthors;
+  }
+
+  // Count total blogs
+  static async count(showUnapproved = false) {
+    const query = showUnapproved
+      ? 'SELECT COUNT(*) FROM blog_posts'
+      : 'SELECT COUNT(*) FROM blog_posts WHERE is_available = true';
+    
+    const result = await pool.query(query);
+    return parseInt(result.rows[0].count, 10);
+  }
+
   // Create blog
   static async create({ title, blog_content, author_id, is_available = false }) {
     const result = await pool.query(
