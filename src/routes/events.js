@@ -1,10 +1,56 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Event = require('../models/Event');
+const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
 const checkRoleAccess = require('../middleware/roleAccess');
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /events/users:
+ *   get:
+ *     summary: Get list of users for event host selection (Admin & Secretary only)
+ *     tags: [Events]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       username:
+ *                         type: string
+ *                       email:
+ *                         type: string
+ *                       role:
+ *                         type: string
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Access denied
+ */
+// GET /api/events/users - Get users list for event host dropdown (Admin & Secretary only)
+router.get('/events/users', authenticateToken, checkRoleAccess(['Admin', 'Secretary']), async (req, res) => {
+  try {
+    const users = await User.findAll();
+    res.json({ users });
+  } catch (error) {
+    console.error('Get users for events error:', error);
+    res.status(500).json({ error: 'Failed to get users' });
+  }
+});
 
 /**
  * @swagger
@@ -113,6 +159,12 @@ router.get('/events', async (req, res) => {
  *                 type: string
  *               event_description:
  *                 type: string
+ *               event_host:
+ *                 type: string
+ *                 description: Optional user ID for the event host
+ *               event_host_name:
+ *                 type: string
+ *                 description: Optional custom host name (used if event_host is not provided or user not found)
  *     responses:
  *       201:
  *         description: Event created successfully
@@ -125,7 +177,9 @@ router.get('/events', async (req, res) => {
 router.post('/events', authenticateToken, checkRoleAccess(['Admin', 'Secretary']), [
   body('event_name').notEmpty().withMessage('Event name is required'),
   body('event_date').notEmpty().withMessage('Event date is required'),
-  body('event_description').optional()
+  body('event_description').optional(),
+  body('event_host').optional(),
+  body('event_host_name').optional()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -133,10 +187,34 @@ router.post('/events', authenticateToken, checkRoleAccess(['Admin', 'Secretary']
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { event_name, event_address, event_time, event_date, event_description } = req.body;
-    const event_host = req.user.id;
+    const { event_name, event_address, event_time, event_date, event_description, event_host, event_host_name } = req.body;
+    
+    // If event_host is provided, verify it exists. If not found or not provided, use event_host_name or current user
+    let final_event_host = null;
+    let final_event_host_name = event_host_name || null;
+    
+    if (event_host) {
+      const hostUser = await User.findById(event_host);
+      if (hostUser) {
+        final_event_host = event_host;
+      } else {
+        // User not found, use event_host_name if provided, otherwise use event_host as name
+        final_event_host_name = event_host_name || event_host || null;
+      }
+    } else if (!event_host_name) {
+      // Default to current user if neither event_host nor event_host_name is provided
+      final_event_host = req.user.id;
+    }
 
-    const event = await Event.create({ event_name, event_address, event_time, event_date, event_description, event_host });
+    const event = await Event.create({ 
+      event_name, 
+      event_address, 
+      event_time, 
+      event_date, 
+      event_description, 
+      event_host: final_event_host,
+      event_host_name: final_event_host_name
+    });
 
     res.status(201).json({ 
       message: 'Event created successfully',
@@ -172,8 +250,18 @@ router.post('/events', authenticateToken, checkRoleAccess(['Admin', 'Secretary']
  *                 type: string
  *               event_address:
  *                 type: string
+ *               event_time:
+ *                 type: string
+ *               event_date:
+ *                 type: string
  *               event_description:
  *                 type: string
+ *               event_host:
+ *                 type: string
+ *                 description: Optional user ID for the event host
+ *               event_host_name:
+ *                 type: string
+ *                 description: Optional custom host name (used if event_host is not provided or user not found)
  *     responses:
  *       200:
  *         description: Event updated successfully
@@ -183,7 +271,9 @@ router.post('/events', authenticateToken, checkRoleAccess(['Admin', 'Secretary']
 // PUT /api/events/:id - Update event (Admin & Secretary only)
 router.put('/events/:id', authenticateToken, checkRoleAccess(['Admin', 'Secretary']), [
   body('event_name').optional().notEmpty(),
-  body('event_description').optional()
+  body('event_description').optional(),
+  body('event_host').optional(),
+  body('event_host_name').optional()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -192,17 +282,47 @@ router.put('/events/:id', authenticateToken, checkRoleAccess(['Admin', 'Secretar
     }
 
     const { id } = req.params;
-    const { event_name, event_address, event_time, event_date, event_description } = req.body;
+    const { event_name, event_address, event_time, event_date, event_description, event_host, event_host_name } = req.body;
 
     // Check if event exists using models
     if (!(await Event.exists(id))) {
       return res.status(404).json({ error: 'Event not found' });
     }
 
+    // Build update fields
+    const updateFields = {};
+    if (event_name !== undefined) updateFields.event_name = event_name;
+    if (event_address !== undefined) updateFields.event_address = event_address;
+    if (event_time !== undefined) updateFields.event_time = event_time;
+    if (event_date !== undefined) updateFields.event_date = event_date;
+    if (event_description !== undefined) updateFields.event_description = event_description;
+    
+    // Handle event_host and event_host_name
+    if (event_host !== undefined) {
+      if (event_host) {
+        const hostUser = await User.findById(event_host);
+        if (hostUser) {
+          updateFields.event_host = event_host;
+          updateFields.event_host_name = null; // Clear custom name if valid user is set
+        } else {
+          // User not found, set as custom name
+          updateFields.event_host = null;
+          updateFields.event_host_name = event_host_name || event_host;
+        }
+      } else {
+        // event_host is null/empty, use event_host_name if provided
+        updateFields.event_host = null;
+        if (event_host_name !== undefined) {
+          updateFields.event_host_name = event_host_name || null;
+        }
+      }
+    } else if (event_host_name !== undefined) {
+      // Only event_host_name is being updated
+      updateFields.event_host_name = event_host_name || null;
+    }
+
     // Update event using models
-    const event = await Event.update(id, { 
-      event_name, event_address, event_time, event_date, event_description 
-    });
+    const event = await Event.update(id, updateFields);
 
     res.json({ 
       message: 'Event updated successfully',

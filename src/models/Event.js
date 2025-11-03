@@ -14,7 +14,7 @@ class Event {
     
     const event = result.rows[0];
     
-    // Get host info if event has a host
+    // Get host info if event has a host user ID
     if (event.event_host) {
       const hostResult = await pool.query(
         'SELECT username, email FROM users WHERE id = $1',
@@ -23,7 +23,15 @@ class Event {
       if (hostResult.rows.length > 0) {
         event.host_username = hostResult.rows[0].username;
         event.host_email = hostResult.rows[0].email;
+      } else {
+        // If user not found, use event_host_name if available
+        event.host_username = event.event_host_name || null;
+        event.host_email = null;
       }
+    } else if (event.event_host_name) {
+      // If only event_host_name is set
+      event.host_username = event.event_host_name;
+      event.host_email = null;
     }
     
     return event;
@@ -46,7 +54,15 @@ class Event {
         if (hostResult.rows.length > 0) {
           event.host_username = hostResult.rows[0].username;
           event.host_email = hostResult.rows[0].email;
+        } else {
+          // If user not found, use event_host_name if available
+          event.host_username = event.event_host_name || null;
+          event.host_email = null;
         }
+      } else if (event.event_host_name) {
+        // If only event_host_name is set
+        event.host_username = event.event_host_name;
+        event.host_email = null;
       }
       return event;
     }));
@@ -75,7 +91,15 @@ class Event {
         if (hostResult.rows.length > 0) {
           event.host_username = hostResult.rows[0].username;
           event.host_email = hostResult.rows[0].email;
+        } else {
+          // If user not found, use event_host_name if available
+          event.host_username = event.event_host_name || null;
+          event.host_email = null;
         }
+      } else if (event.event_host_name) {
+        // If only event_host_name is set
+        event.host_username = event.event_host_name;
+        event.host_email = null;
       }
       return event;
     }));
@@ -90,13 +114,13 @@ class Event {
   }
 
   // Create event
-  static async create({ event_name, event_address, event_time, event_date, event_description, event_host }) {
+  static async create({ event_name, event_address, event_time, event_date, event_description, event_host, event_host_name }) {
     const result = await pool.query(
       `INSERT INTO community_events 
-       (event_name, event_address, event_time, event_date, event_description, event_host)
-       VALUES ($1, $2, $3, $4, $5, $6)
+       (event_name, event_address, event_time, event_date, event_description, event_host, event_host_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [event_name, event_address, event_time, event_date, event_description, event_host]
+      [event_name, event_address, event_time, event_date, event_description, event_host || null, event_host_name || null]
     );
     return result.rows[0];
   }
