@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Event = require('../models/Event');
+const EventAttendee = require('../models/EventAttendee');
 const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
 const checkRoleAccess = require('../middleware/roleAccess');
@@ -128,6 +129,192 @@ router.get('/events', async (req, res) => {
   } catch (error) {
     console.error('Get events error:', error);
     res.status(500).json({ error: 'Failed to get events' });
+  }
+});
+
+/**
+ * @swagger
+ * /events/{id}/rsvp:
+ *   post:
+ *     summary: RSVP to an event
+ *     tags: [Events]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: RSVP recorded
+ *       404:
+ *         description: Event not found
+ */
+// POST /api/events/:id/rsvp - RSVP to an event
+router.post('/events/:id/rsvp', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    if (!(await Event.exists(id))) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    const attendee = await EventAttendee.rsvp(id, userId);
+    res.json({ message: 'RSVP recorded', attendee });
+  } catch (error) {
+    console.error('RSVP event error:', error);
+    res.status(500).json({ error: 'Failed to RSVP to event' });
+  }
+});
+
+/**
+ * @swagger
+ * /events/{id}/rsvp:
+ *   delete:
+ *     summary: Cancel RSVP to an event
+ *     tags: [Events]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: RSVP cancelled
+ *       404:
+ *         description: Event not found
+ */
+// DELETE /api/events/:id/rsvp - Cancel RSVP
+router.delete('/events/:id/rsvp', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    if (!(await Event.exists(id))) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    const attendee = await EventAttendee.cancel(id, userId);
+    if (!attendee) {
+      return res.status(404).json({ error: 'RSVP not found' });
+    }
+
+    res.json({ message: 'RSVP cancelled', attendee });
+  } catch (error) {
+    console.error('Cancel RSVP error:', error);
+    res.status(500).json({ error: 'Failed to cancel RSVP' });
+  }
+});
+
+/**
+ * @swagger
+ * /events/{id}/attendees:
+ *   get:
+ *     summary: Get event attendees
+ *     tags: [Events]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of attendees
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Event not found
+ */
+// GET /api/events/:id/attendees - List attendees (admins, secretaries, or event host)
+router.get('/events/:id/attendees', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const currentUser = req.user;
+
+    const event = await Event.findById(id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    const isPrivilegedRole = ['Admin', 'Secretary'].includes(currentUser.role);
+    const isEventHost = event.event_host === currentUser.id;
+
+    if (!isPrivilegedRole && !isEventHost) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const attendees = await EventAttendee.getAttendees(id);
+    res.json({ attendees });
+  } catch (error) {
+    console.error('Get event attendees error:', error);
+    res.status(500).json({ error: 'Failed to get event attendees' });
+  }
+});
+
+/**
+ * @swagger
+ * /events/{id}/rsvp/{userId}/confirm:
+ *   post:
+ *     summary: Confirm event attendance for a user
+ *     tags: [Events]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Attendance confirmed
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Event or user not found
+ */
+// POST /api/events/:id/rsvp/:userId/confirm - Confirm attendance (Admin/Secretary/Event Host)
+router.post('/events/:id/rsvp/:userId/confirm', authenticateToken, async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    const currentUser = req.user;
+
+    const event = await Event.findById(id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    const targetUser = await User.findById(userId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isPrivilegedRole = ['Admin', 'Secretary'].includes(currentUser.role);
+    const isEventHost = event.event_host === currentUser.id;
+
+    if (!isPrivilegedRole && !isEventHost) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const attendee = await EventAttendee.confirmAttendance(id, userId, currentUser.id);
+    res.json({ message: 'Attendance confirmed', attendee });
+  } catch (error) {
+    console.error('Confirm attendance error:', error);
+    res.status(500).json({ error: 'Failed to confirm attendance' });
   }
 });
 

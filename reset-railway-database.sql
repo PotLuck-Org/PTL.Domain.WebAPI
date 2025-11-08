@@ -195,6 +195,21 @@ CREATE TABLE user_addresses (
     UNIQUE(user_id)
 );
 
+-- User Connections table
+CREATE TABLE user_connections (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id VARCHAR(10) REFERENCES users(id) ON DELETE CASCADE,
+    connected_user_id VARCHAR(10) REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'blocked')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, connected_user_id)
+);
+
+CREATE INDEX idx_user_connections_user_id ON user_connections(user_id);
+CREATE INDEX idx_user_connections_connected_user_id ON user_connections(connected_user_id);
+CREATE INDEX idx_user_connections_status ON user_connections(status);
+
 -- Community Events table
 CREATE TABLE community_events (
     id VARCHAR(10) PRIMARY KEY,
@@ -214,6 +229,23 @@ CREATE TRIGGER generate_event_id_trigger
     FOR EACH ROW
     WHEN (NEW.id IS NULL)
     EXECUTE FUNCTION generate_event_id();
+
+-- Event Attendees table
+CREATE TABLE event_attendees (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_id VARCHAR(10) REFERENCES community_events(id) ON DELETE CASCADE,
+    user_id VARCHAR(10) REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'registered' CHECK (status IN ('registered', 'checked_in', 'cancelled')),
+    checked_in_at TIMESTAMP,
+    checked_in_by VARCHAR(10) REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(event_id, user_id)
+);
+
+CREATE INDEX idx_event_attendees_event_id ON event_attendees(event_id);
+CREATE INDEX idx_event_attendees_user_id ON event_attendees(user_id);
+CREATE INDEX idx_event_attendees_status ON event_attendees(status);
 
 -- Blog Posts table
 CREATE TABLE blog_posts (
@@ -321,6 +353,8 @@ CREATE TRIGGER update_user_profiles_updated BEFORE UPDATE ON user_profiles FOR E
 CREATE TRIGGER update_user_socials_updated BEFORE UPDATE ON user_socials FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_user_addresses_updated BEFORE UPDATE ON user_addresses FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_community_events_updated BEFORE UPDATE ON community_events FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_user_connections_updated BEFORE UPDATE ON user_connections FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_event_attendees_updated BEFORE UPDATE ON event_attendees FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_blog_posts_updated BEFORE UPDATE ON blog_posts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_timeline_posts_updated BEFORE UPDATE ON timeline_posts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_polls_updated BEFORE UPDATE ON polls FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

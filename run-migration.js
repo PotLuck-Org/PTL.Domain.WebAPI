@@ -72,8 +72,14 @@ async function runMigration(migrationFile) {
   }
 }
 
-// Get migration file from command line argument or use default
-const migrationFile = process.argv[2] || 'migration-add-timeline-title.sql';
+// Get migration file from command line argument
+const migrationFile = process.argv[2];
+
+if (!migrationFile) {
+  console.error('Usage: node run-migration.js <migration-file.sql>');
+  console.error('No migration files are bundled anymore—use the consolidated reset/initialization scripts.');
+  process.exit(1);
+}
 
 runMigration(migrationFile);
 

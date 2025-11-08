@@ -4,32 +4,36 @@ const User = require('../models/User');
 const UserProfile = require('../models/UserProfile');
 const UserSocials = require('../models/UserSocials');
 const UserAddress = require('../models/UserAddress');
+const Connection = require('../models/Connection');
+const EventAttendee = require('../models/EventAttendee');
+const pool = require('../config/database');
 const { authenticateToken, ownsResourceOrAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
 /**
  * @swagger
- * /profile/{username}:
+ * /profile/{identifier}:
  *   get:
- *     summary: View user profile
+ *     summary: View user profile (supports both ID and username)
  *     tags: [Profile]
  *     parameters:
  *       - in: path
- *         name: username
+ *         name: identifier
  *         required: true
  *         schema:
  *           type: string
+ *         description: User ID (UUID) or username
  *     responses:
  *       200:
  *         description: Profile retrieved successfully
  *       404:
  *         description: User not found
  */
-// GET /api/profile/:username - View any user's profile (public fields only)
-router.get('/profile/:username', async (req, res) => {
+// GET /api/profile/:identifier - View any user's profile (supports ID or username)
+router.get('/profile/:identifier', async (req, res) => {
   try {
-    const { username } = req.params;
+    const { identifier } = req.params;
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -52,31 +56,135 @@ router.get('/profile/:username', async (req, res) => {
       }
     }
 
-    // Get user by username using models
-    const user = await User.findByUsername(username);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+    // Try to get user by ID first, then by username
+    // Note: IDs can be UUIDs or VARCHAR(10) format depending on database schema
+    let user = null;
+    
+    // First try to find by ID (works for both UUID and VARCHAR ID formats)
+    try {
+      user = await User.findById(identifier);
+      if (user) {
+        console.log(`User found by ID: ${identifier}`);
+      }
+    } catch (err) {
+      // If ID lookup throws an error (e.g., database error), log it
+      console.error('User lookup by ID error:', err.message);
     }
     
-    // Get profile, socials, and address using models
-    const [profile, socials, address] = await Promise.all([
-      UserProfile.findByUserId(user.id),
-      UserSocials.findByUserId(user.id),
-      UserAddress.findByUserId(user.id)
-    ]);
+    // If not found by ID, try username
+    if (!user) {
+      try {
+        user = await User.findByUsername(identifier);
+        if (user) {
+          console.log(`User found by username: ${identifier}`);
+        }
+      } catch (err) {
+        console.error('User lookup by username error:', err.message);
+      }
+    }
+
+    if (!user) {
+      console.log(`User not found with identifier: ${identifier}`);
+      return res.status(404).json({ error: 'User not found', identifier: identifier });
+    }
+    
+    // Get profile, socials, address, connection stats, and event stats
+    let connectionCount = 0;
+    let connectionStatus = null;
+    
+    try {
+      // Try to get connection data (may fail if user_connections table doesn't exist yet)
+      [connectionCount, connectionStatus] = await Promise.all([
+        Connection.getConnectionCount(user.id).catch((err) => {
+          console.log('Connection count query failed:', err.message);
+          return 0;
+        }),
+        currentUserId ? Connection.getConnectionStatus(currentUserId, user.id).catch((err) => {
+          console.log('Connection status query failed:', err.message);
+          return null;
+        }) : Promise.resolve(null)
+      ]);
+    } catch (err) {
+      console.log('Connection queries failed (table may not exist yet):', err.message);
+      connectionCount = 0;
+      connectionStatus = null;
+    }
+
+    // Get profile data with error handling
+    let profile, socials, address, eventsHosted, eventsAttendedCount;
+    try {
+      [profile, socials, address, eventsHosted, eventsAttendedCount] = await Promise.all([
+        UserProfile.findByUserId(user.id).catch((err) => {
+          console.error('Error fetching profile:', err.message);
+          return null;
+        }),
+        UserSocials.findByUserId(user.id).catch((err) => {
+          console.error('Error fetching socials:', err.message);
+          return null;
+        }),
+        UserAddress.findByUserId(user.id).catch((err) => {
+          console.error('Error fetching address:', err.message);
+          return null;
+        }),
+        pool.query('SELECT COUNT(*) as count FROM community_events WHERE event_host = $1', [user.id]).catch((err) => {
+          console.error('Error fetching events:', err.message);
+          return { rows: [{ count: '0' }] };
+        }),
+        EventAttendee.countCheckedInForUser(user.id).catch((err) => {
+          console.error('Error counting attended events:', err.message);
+          return 0;
+        })
+      ]);
+    } catch (err) {
+      console.error('Error in Promise.all for profile data:', err);
+      throw err;
+    }
 
     const profileData = profile || {};
     const socialsData = socials || {};
     const addressData = address || {};
+    const eventsHostedCount = parseInt(eventsHosted.rows[0]?.count || 0);
+    const eventsAttended = typeof eventsAttendedCount === 'number'
+      ? eventsAttendedCount
+      : parseInt(eventsAttendedCount?.rows?.[0]?.count || 0, 10);
 
     // Determine if user can view private fields
     const canViewPrivate = currentUserRole === 'Admin' || 
                            currentUserRole === 'President' || 
                            currentUserId === user.id;
 
-    // Prepare response
+    // Build full name
+    const fullName = profileData.firstname && profileData.lastname 
+      ? `${profileData.firstname}${profileData.middlename ? ' ' + profileData.middlename + ' ' : ' '}${profileData.lastname}`
+      : user.username;
+
+    // Build location string
+    const location = addressData.county 
+      ? `${addressData.county}${addressData.post_code ? ', ' + addressData.post_code : ''}`
+      : null;
+
+    // Get member since year
+    const memberSince = user.created_at 
+      ? new Date(user.created_at).getFullYear().toString()
+      : null;
+
+    // Transform response to match frontend expectations
     const response = {
+      id: user.id,
+      name: fullName,
+      title: profileData.occupation || user.role,
+      location: location || 'Not specified',
+      memberSince: memberSince || 'Unknown',
+      bio: profileData.about || 'No bio available.',
+      email: canViewPrivate ? user.email : undefined,
+      phone: canViewPrivate ? profileData.phone_number : undefined,
+      eventsAttended,
+      eventsHosted: eventsHostedCount,
+      connections: connectionCount,
+      // Connection status for frontend
+      connectionStatus: connectionStatus ? connectionStatus.status : null,
+      isConnected: connectionStatus?.status === 'accepted',
+      // Additional data for backward compatibility
       user: {
         id: user.id,
         email: canViewPrivate ? user.email : undefined,
@@ -91,7 +199,6 @@ router.get('/profile/:username', async (req, res) => {
         occupation: profileData.occupation,
         date_of_birth: profileData.date_of_birth,
         gender: profileData.gender,
-        // phone_number excluded for non-authorities
       },
       socials: socialsData,
       address: canViewPrivate ? addressData : undefined
@@ -100,7 +207,12 @@ router.get('/profile/:username', async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({ error: 'Failed to get profile' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to get profile',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
@@ -327,6 +439,161 @@ router.put('/profile/:username', authenticateToken, [
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+/**
+ * @swagger
+ * /profile/connect/{userId}:
+ *   post:
+ *     summary: Send a connection request to a user
+ *     tags: [Profile]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Connection request sent successfully
+ *       400:
+ *         description: Cannot connect to yourself
+ *       404:
+ *         description: User not found
+ */
+// POST /api/profile/connect/:userId - Send connection request
+router.post('/profile/connect/:userId', authenticateToken, async (req, res) => {
+  try {
+    const currentUserId = req.user.id;
+    const { userId } = req.params;
+
+    if (currentUserId === userId) {
+      return res.status(400).json({ error: 'Cannot connect to yourself' });
+    }
+
+    // Check if target user exists
+    const targetUser = await User.findById(userId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check existing connection
+    const existingConnection = await Connection.getConnectionStatus(currentUserId, userId);
+    if (existingConnection) {
+      if (existingConnection.status === 'accepted') {
+        return res.status(400).json({ error: 'Already connected' });
+      }
+      if (existingConnection.status === 'pending') {
+        return res.status(400).json({ error: 'Connection request already sent' });
+      }
+    }
+
+    // Create connection request
+    const connection = await Connection.createRequest(currentUserId, userId);
+    res.json({ message: 'Connection request sent', connection });
+  } catch (error) {
+    console.error('Connect error:', error);
+    res.status(500).json({ error: 'Failed to send connection request' });
+  }
+});
+
+/**
+ * @swagger
+ * /profile/connect/{userId}/accept:
+ *   post:
+ *     summary: Accept a connection request
+ *     tags: [Profile]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Connection accepted successfully
+ *       404:
+ *         description: Connection request not found
+ */
+// POST /api/profile/connect/:userId/accept - Accept connection request
+router.post('/profile/connect/:userId/accept', authenticateToken, async (req, res) => {
+  try {
+    const currentUserId = req.user.id;
+    const { userId } = req.params;
+
+    const connection = await Connection.acceptRequest(currentUserId, userId);
+    if (!connection) {
+      return res.status(404).json({ error: 'Connection request not found' });
+    }
+
+    res.json({ message: 'Connection accepted', connection });
+  } catch (error) {
+    console.error('Accept connection error:', error);
+    res.status(500).json({ error: 'Failed to accept connection' });
+  }
+});
+
+/**
+ * @swagger
+ * /users:
+ *   get:
+ *     summary: Get all users (for Network page)
+ *     tags: [Profile]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of users retrieved successfully
+ */
+// GET /api/users - Get all users for Network page
+router.get('/users', authenticateToken, async (req, res) => {
+  try {
+    const users = await User.findAll();
+    
+    // Get profile and address data for each user
+    const usersWithProfiles = await Promise.all(users.map(async (user) => {
+      const [profile, address] = await Promise.all([
+        UserProfile.findByUserId(user.id),
+        UserAddress.findByUserId(user.id)
+      ]);
+
+      const profileData = profile || {};
+      const addressData = address || {};
+
+      // Build full name
+      const fullName = profileData.firstname && profileData.lastname 
+        ? `${profileData.firstname}${profileData.middlename ? ' ' + profileData.middlename + ' ' : ' '}${profileData.lastname}`
+        : user.username;
+
+      // Build location string
+      const location = addressData.county 
+        ? `${addressData.county}${addressData.post_code ? ', ' + addressData.post_code : ''}`
+        : 'Not specified';
+
+      // Get member since year
+      const memberSince = user.created_at 
+        ? new Date(user.created_at).getFullYear().toString()
+        : 'Unknown';
+
+      return {
+        id: user.id,
+        name: fullName,
+        title: profileData.occupation || user.role,
+        location: location,
+        memberSince: memberSince,
+        avatar: null // Can be extended later with profile pictures
+      };
+    }));
+
+    res.json(usersWithProfiles);
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ error: 'Failed to get users' });
   }
 });
 
